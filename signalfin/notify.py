@@ -1,25 +1,35 @@
-"""PushPlus WeChat notification."""
+"""Bark iOS push notification."""
 
 import requests
 
 
-def send_pushplus(token: str, title: str, content: str) -> bool:
-    """Send message via PushPlus API.
+def send_bark(server_url: str, title: str, content: str,
+              group: str = "signalfin") -> bool:
+    """Send notification via Bark.
+
+    Args:
+        server_url: Bark server URL with device key,
+                    e.g. 'https://api.day.app/YOUR_KEY'
+        title: notification title
+        content: notification body
+        group: notification group for iOS grouping
 
     Returns True on success.
     """
     resp = requests.post(
-        "http://www.pushplus.plus/send",
+        f"{server_url.rstrip('/')}/",
         json={
-            "token": token,
             "title": title,
-            "content": content,
-            "template": "markdown",
+            "body": content,
+            "group": group,
+            "level": "timeSensitive",
+            "isArchive": 1,
         },
+        headers={"Content-Type": "application/json; charset=utf-8"},
         timeout=10,
     )
     data = resp.json()
     if data.get("code") != 200:
-        print(f"PushPlus error: {data}")
+        print(f"Bark error: {data}")
         return False
     return True

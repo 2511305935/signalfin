@@ -39,7 +39,7 @@ jobs:
       - name: Run monitor
         env:
           STOCK_LIST: ${{ secrets.STOCK_LIST }}
-          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          BARK_URL: ${{ secrets.BARK_URL }}
         run: |
           SESSION="${{ github.event.inputs.session || 'auto' }}"
           python monitor.py --session "$SESSION"

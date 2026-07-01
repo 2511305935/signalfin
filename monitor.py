@@ -16,7 +16,7 @@ from datetime import datetime, timezone, timedelta
 
 from signalfin.fetcher import fetch_kline, fetch_realtime
 from signalfin.signals import detect_signals, get_status_text
-from signalfin.notify import send_pushplus
+from signalfin.notify import send_bark
 
 CST = timezone(timedelta(hours=8))
 
@@ -46,8 +46,8 @@ def get_stock_list() -> list[str]:
     return [s.strip() for s in raw.split(",") if s.strip()]
 
 
-def get_pushplus_token() -> str | None:
-    return os.environ.get("PUSHPLUS_TOKEN")
+def get_bark_url() -> str | None:
+    return os.environ.get("BARK_URL")
 
 
 def detect_session() -> str:
@@ -76,8 +76,8 @@ def in_session(session_name: str) -> bool:
 
 
 def format_message(results: list[dict]) -> str:
-    """Format signal results as markdown for PushPlus."""
-    lines = ["# signalfin 交易信号\n"]
+    """Format signal results as plain text for Bark push."""
+    lines = []
 
     for r in results:
         symbol = r["symbol"]
@@ -87,26 +87,22 @@ def format_message(results: list[dict]) -> str:
 
         change = rt["change_pct"]
         arrow = "+" if change >= 0 else ""
-        lines.append(f"## {symbol}")
-        lines.append(f"**现价: {rt['price']}** | 涨跌: {arrow}{change}%")
-        lines.append(f"{get_status_text(state)}\n")
+        lines.append(f"【{symbol}】{rt['price']} ({arrow}{change}%)")
+        lines.append(get_status_text(state))
 
-        if new_signals:
-            for sig in new_signals:
-                icon = {"bullish": "🟢", "bearish": "🔴", "neutral": "⚪"}.get(
-                    sig["direction"], "⚪")
-                lines.append(f"{icon} **{sig['type']}**: {sig['reason']}\n")
-        else:
-            lines.append("无新信号\n")
+        for sig in new_signals:
+            icon = {"bullish": "▲", "bearish": "▼", "neutral": "—"}.get(
+                sig["direction"], "—")
+            lines.append(f"{icon} {sig['type']}: {sig['reason']}")
 
-        lines.append("---\n")
+        lines.append("")
 
-    now = datetime.now(CST).strftime("%Y-%m-%d %H:%M CST")
-    lines.append(f"*{now}*")
+    now = datetime.now(CST).strftime("%m-%d %H:%M")
+    lines.append(now)
     return "\n".join(lines)
 
 
-def run_once(stocks: list[str], state_map: dict, token: str | None) -> dict:
+def run_once(stocks: list[str], state_map: dict, bark_url: str | None) -> dict:
     """Run one monitoring cycle. Returns updated state_map."""
     results_with_signals = []
     all_results = []
@@ -133,14 +129,13 @@ def run_once(stocks: list[str], state_map: dict, token: str | None) -> dict:
             print(f"[{symbol}] Error: {e}")
 
     # Push only if there are new signals
-    if results_with_signals and token:
+    if results_with_signals and bark_url:
         msg = format_message(results_with_signals)
         title = f"signalfin: {len(results_with_signals)}只标的有新信号"
-        ok = send_pushplus(token, title, msg)
+        ok = send_bark(bark_url, title, msg)
         status = "sent" if ok else "FAILED"
         print(f"[Push] {status} — {len(results_with_signals)} stocks with signals")
     elif results_with_signals:
-        # No token, print to stdout
         print(format_message(results_with_signals))
     else:
         now = datetime.now(CST).strftime("%H:%M")
@@ -158,10 +153,10 @@ def main():
     args = parser.parse_args()
 
     stocks = get_stock_list()
-    token = get_pushplus_token()
+    bark_url = get_bark_url()
     print(f"Monitoring {len(stocks)} stocks: {', '.join(stocks)}")
-    if not token:
-        print("WARNING: PUSHPLUS_TOKEN not set, will print to stdout")
+    if not bark_url:
+        print("WARNING: BARK_URL not set, will print to stdout")
 
     session = args.session
     if session == "auto":
@@ -171,7 +166,7 @@ def main():
     state_map: dict[str, dict] = {}
 
     if args.once or session == "test":
-        run_once(stocks, state_map, token)
+        run_once(stocks, state_map, bark_url)
         return
 
     # Loop until session ends
@@ -181,7 +176,7 @@ def main():
             print(f"Session {session} ended, exiting")
             break
 
-        run_once(stocks, state_map, token)
+        run_once(stocks, state_map, bark_url)
         time.sleep(INTERVAL)
 
 

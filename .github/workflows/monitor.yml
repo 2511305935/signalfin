@@ -1,0 +1,45 @@
+name: Stock Monitor
+
+on:
+  schedule:
+    # Asia session: 09:23 CST = 01:23 UTC (Mon-Fri)
+    - cron: '23 1 * * 1-5'
+    # US session: 21:23 CST = 13:23 UTC (Mon-Fri)
+    - cron: '23 13 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      session:
+        description: 'Session to run (auto/asia/us/test)'
+        required: false
+        default: 'auto'
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 400
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run monitor
+        env:
+          STOCK_LIST: ${{ secrets.STOCK_LIST }}
+          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+        run: |
+          SESSION="${{ github.event.inputs.session || 'auto' }}"
+          python monitor.py --session "$SESSION"

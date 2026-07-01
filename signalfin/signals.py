@@ -236,9 +236,97 @@ def detect_signals(kline: pd.DataFrame, symbol: str,
     # --- Summary info (always included in state) ---
     state["_rsi_val"] = round(rsi, 1)
     state["_macd_status"] = state["macd"]
+    state["_ma_arr"] = state.get("ma_arr", "neutral")
     state["_price"] = round(price, 3)
 
     return signals, state
+
+
+def get_action(state: dict) -> tuple[str, str]:
+    """Generate action recommendation from signal state combination.
+
+    Returns (action_icon, action_text).
+    Action categories:
+      - 清仓考虑: trend down + no oversold bounce expected
+      - 减仓/止损: trend down + moderate weakness
+      - 观望持有: mixed or neutral
+      - 关注反弹: trend down but oversold
+      - 持有: trend up
+      - 加仓机会: strong bullish alignment
+    """
+    macd = state.get("_macd_status", "")
+    rsi_state = state.get("rsi", "neutral")
+    ma_arr = state.get("_ma_arr", "neutral")
+    boll = state.get("boll", "mid")
+    kdj = state.get("kdj", "neutral")
+
+    # Score: positive = bullish, negative = bearish
+    score = 0
+    # MACD
+    if macd == "golden_above":
+        score += 3
+    elif macd == "golden":
+        score += 2
+    elif macd == "death":
+        score -= 2
+    elif macd == "death_below":
+        score -= 3
+
+    # MA arrangement
+    if ma_arr == "bullish":
+        score += 2
+    elif ma_arr == "above_ma20":
+        score += 1
+    elif ma_arr == "below_ma20":
+        score -= 1
+    elif ma_arr == "bearish":
+        score -= 2
+
+    # KDJ
+    if kdj in ("golden", "oversold_cross"):
+        score += 1
+    elif kdj in ("death", "overbought"):
+        score -= 1
+
+    # RSI modifies the action, not the trend score
+    is_oversold = rsi_state in ("oversold", "severe_oversold")
+    is_overbought = rsi_state in ("overbought", "severe_overbought")
+    is_extreme_oversold = rsi_state == "severe_oversold"
+    is_extreme_overbought = rsi_state == "severe_overbought"
+    at_boll_lower = boll == "lower_touch"
+    at_boll_upper = boll == "upper_touch"
+
+    # Decision matrix
+    if score >= 4:
+        if is_overbought:
+            return "⚠️", "趋势强但超买，持有不追高"
+        return "🟢", "多头共振，持有或加仓"
+    elif score >= 2:
+        if is_overbought:
+            return "⚠️", "短线超买，注意回调减仓"
+        return "🟢", "趋势偏多，持有"
+    elif score >= 0:
+        if is_oversold and at_boll_lower:
+            return "👀", "超卖+布林下轨，可轻仓博反弹"
+        if is_oversold:
+            return "👀", "超卖区间，关注反弹机会"
+        return "⏸️", "方向不明，观望"
+    elif score >= -2:
+        if is_extreme_oversold:
+            return "👀", "极度超卖，反弹概率大，不宜追空"
+        if is_oversold and at_boll_lower:
+            return "👀", "超卖+触下轨，短线可能反弹"
+        if is_oversold:
+            return "👀", "弱势超卖，等企稳信号再操作"
+        return "🔴", "趋势偏空，考虑减仓"
+    else:  # score <= -3
+        if is_extreme_oversold:
+            return "👀", "极端超卖，可能有技术反弹，但不接飞刀"
+        if is_oversold:
+            return "👀", "深度超卖，关注止跌信号"
+        if is_extreme_overbought:
+            return "🔴", "空头反弹超买，逢高减仓"
+        return "🔴", "空头趋势，建议清仓或止损"
 
 
 def get_status_text(state: dict) -> str:

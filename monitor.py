@@ -15,7 +15,7 @@ import time
 from datetime import datetime, timezone, timedelta
 
 from signalfin.fetcher import fetch_kline, fetch_realtime
-from signalfin.signals import detect_signals, get_status_text
+from signalfin.signals import detect_signals, get_status_text, get_action
 from signalfin.notify import send_bark
 
 CST = timezone(timedelta(hours=8))
@@ -87,8 +87,10 @@ def format_message(results: list[dict]) -> str:
 
         change = rt["change_pct"]
         arrow = "+" if change >= 0 else ""
+        action_icon, action_text = get_action(state)
         lines.append(f"【{symbol}】{rt['price']} ({arrow}{change}%)")
         lines.append(get_status_text(state))
+        lines.append(f"{action_icon} 操作: {action_text}")
 
         for sig in new_signals:
             icon = {"bullish": "▲", "bearish": "▼", "neutral": "—"}.get(

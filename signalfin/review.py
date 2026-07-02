@@ -9,6 +9,15 @@ from signalfin.notify import send_bark
 CST = timezone(timedelta(hours=8))
 
 
+def _stock_label(symbol: str, holdings: dict, rt: dict) -> str:
+    """Format as 【symbol name】following signalfin convention."""
+    h_name = holdings.get(symbol, {}).get("name")
+    name = h_name or rt.get("name", "")
+    if name:
+        return f"【{symbol} {name}】"
+    return f"【{symbol}】"
+
+
 def _parse_pipe_kv(env_key: str, val_count: int = 1) -> dict:
     """Parse 'key:v1:v2|key:v1:v2' env vars."""
     raw = os.environ.get(env_key, "")
@@ -121,10 +130,7 @@ def build_review(session: str, stocks: list[str]) -> tuple[str, str] | None:
         price = r["price"]
         chg = r.get("change_pct", 0)
         icon = "\U0001f534" if chg < -2 else ("\U0001f7e2" if chg > 2 else "\u26aa")
-        # Prefer Chinese name from HOLDINGS over yfinance English name
-        h_name = holdings.get(sym, {}).get("name")
-        name = h_name or r.get("name", sym)
-        label = name[:8] if name else sym
+        label = _stock_label(sym, holdings, r)
 
         sign = "+" if chg >= 0 else ""
         part = f"{icon} {label} {price} ({sign}{chg:.1f}%)"
@@ -142,11 +148,10 @@ def build_review(session: str, stocks: list[str]) -> tuple[str, str] | None:
     if movers:
         lines.extend(["", "—— 异动提醒 ——"])
         for r in movers:
-            h_name = holdings.get(r["symbol"], {}).get("name")
-            name = (h_name or r.get("name", r["symbol"]))[:8]
+            label = _stock_label(r["symbol"], holdings, r)
             chg = r["change_pct"]
             tag = "大涨" if chg > 0 else "大跌"
-            lines.append(f"\u26a1 {name} {tag}{abs(chg):.1f}%")
+            lines.append(f"\u26a1 {label} {tag}{abs(chg):.1f}%")
 
     # --- Stop-loss proximity (<5%) ---
     sl_items = []
@@ -155,9 +160,8 @@ def build_review(session: str, stocks: list[str]) -> tuple[str, str] | None:
             target = stop_loss[r["symbol"]]
             dist = (r["price"] - target) / target * 100
             if dist < 5:
-                h_name = holdings.get(r["symbol"], {}).get("name")
-                name = (h_name or r.get("name", r["symbol"]))[:8]
-                sl_items.append(f"\u26a0\ufe0f {name} 距止损{target}仅{dist:.1f}%")
+                label = _stock_label(r["symbol"], holdings, r)
+                sl_items.append(f"\u26a0\ufe0f {label} 距止损{target}仅{dist:.1f}%")
     if sl_items:
         lines.extend(["", "—— 止损监控 ——"])
         lines.extend(sl_items)
@@ -166,9 +170,8 @@ def build_review(session: str, stocks: list[str]) -> tuple[str, str] | None:
     action_items = []
     for r in results:
         if r["symbol"] in actions:
-            h_name = holdings.get(r["symbol"], {}).get("name")
-            name = (h_name or r.get("name", r["symbol"]))[:8]
-            action_items.append(f"\u2192 {name}: {actions[r['symbol']]}")
+            label = _stock_label(r["symbol"], holdings, r)
+            action_items.append(f"\u2192 {label}: {actions[r['symbol']]}")
     if action_items:
         lines.extend(["", f"—— {next_label}操作指引 ——"])
         lines.extend(action_items)

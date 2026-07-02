@@ -2,14 +2,22 @@ name: Stock Monitor
 
 on:
   schedule:
-    # Every 5 min, Mon-Fri — workflow self-checks trading hours
+    # Every 5 min, Mon-Fri — real-time monitoring during trading hours
     - cron: '*/5 * * * 1-5'
+    # Asia session close review — 16:15 CST = 08:15 UTC
+    - cron: '15 8 * * 1-5'
+    # US session close review — 04:30 CST = 20:30 UTC (EDT; shift to 21:30 for EST)
+    - cron: '30 20 * * 1-5'
   workflow_dispatch:
     inputs:
       session:
         description: 'Session to run (auto/asia/us/test)'
         required: false
         default: 'auto'
+      review:
+        description: 'Send daily review (asia/us), leave empty for monitor mode'
+        required: false
+        default: ''
 
 # Only one monitor instance at a time; skip new triggers if already running
 concurrency:
@@ -22,12 +30,47 @@ jobs:
     timeout-minutes: 400
 
     steps:
-      - name: Check trading hours
-        id: session_check
+      - name: Detect run mode
+        id: mode_check
         run: |
           H=$(TZ=Asia/Shanghai date +%-H)
           M=$(TZ=Asia/Shanghai date +%-M)
           T=$((H * 60 + M))
+
+          # workflow_dispatch with review param
+          REVIEW_INPUT="${{ github.event.inputs.review }}"
+          if [ -n "$REVIEW_INPUT" ]; then
+            echo "mode=review" >> "$GITHUB_OUTPUT"
+            echo "review_session=$REVIEW_INPUT" >> "$GITHUB_OUTPUT"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Review mode: $REVIEW_INPUT (manual)"
+            exit 0
+          fi
+
+          # Scheduled review windows (±5 min tolerance)
+          # Asia review: 16:10-16:20 CST (T=970-980)
+          ASIA_REVIEW_START=$((16 * 60 + 10))
+          ASIA_REVIEW_END=$((16 * 60 + 20))
+          # US review: 04:25-04:35 CST (T=265-275)
+          US_REVIEW_START=$((4 * 60 + 25))
+          US_REVIEW_END=$((4 * 60 + 35))
+
+          if [ $T -ge $ASIA_REVIEW_START ] && [ $T -le $ASIA_REVIEW_END ]; then
+            echo "Asia review window ($H:$M CST)"
+            echo "mode=review" >> "$GITHUB_OUTPUT"
+            echo "review_session=asia" >> "$GITHUB_OUTPUT"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ $T -ge $US_REVIEW_START ] && [ $T -le $US_REVIEW_END ]; then
+            echo "US review window ($H:$M CST)"
+            echo "mode=review" >> "$GITHUB_OUTPUT"
+            echo "review_session=us" >> "$GITHUB_OUTPUT"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Regular monitor session check
           ASIA_START=$((9 * 60 + 20))
           ASIA_END=$((16 * 60 + 10))
           US_START=$((21 * 60 + 20))
@@ -42,22 +85,24 @@ jobs:
           else
             echo "Outside trading hours ($H:$M CST), skipping"
           fi
-          # workflow_dispatch always runs regardless of time
+
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             IN_SESSION=true
           fi
+
+          echo "mode=monitor" >> "$GITHUB_OUTPUT"
           echo "run=$IN_SESSION" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v4
-        if: steps.session_check.outputs.run == 'true'
+        if: steps.mode_check.outputs.run == 'true'
 
       - uses: actions/setup-python@v5
-        if: steps.session_check.outputs.run == 'true'
+        if: steps.mode_check.outputs.run == 'true'
         with:
           python-version: '3.12'
 
       - name: Cache pip packages
-        if: steps.session_check.outputs.run == 'true'
+        if: steps.mode_check.outputs.run == 'true'
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
@@ -66,11 +111,11 @@ jobs:
             ${{ runner.os }}-pip-
 
       - name: Install dependencies
-        if: steps.session_check.outputs.run == 'true'
+        if: steps.mode_check.outputs.run == 'true'
         run: pip install -r requirements.txt
 
       - name: Run monitor
-        if: steps.session_check.outputs.run == 'true'
+        if: steps.mode_check.outputs.run == 'true' && steps.mode_check.outputs.mode == 'monitor'
         env:
           STOCK_LIST: ${{ secrets.STOCK_LIST }}
           BARK_URL: ${{ secrets.BARK_URL }}
@@ -78,3 +123,15 @@ jobs:
         run: |
           SESSION="${{ github.event.inputs.session || 'auto' }}"
           python monitor.py --session "$SESSION"
+
+      - name: Send daily review
+        if: steps.mode_check.outputs.run == 'true' && steps.mode_check.outputs.mode == 'review'
+        env:
+          STOCK_LIST: ${{ secrets.STOCK_LIST }}
+          BARK_URL: ${{ secrets.BARK_URL }}
+          STOP_LOSS: ${{ secrets.STOP_LOSS }}
+          HOLDINGS: ${{ secrets.HOLDINGS }}
+          ACTIONS: ${{ secrets.ACTIONS }}
+        run: |
+          REVIEW_SESSION="${{ steps.mode_check.outputs.review_session }}"
+          python monitor.py --review "$REVIEW_SESSION"

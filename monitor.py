@@ -17,6 +17,7 @@ from datetime import datetime, timezone, timedelta
 from signalfin.fetcher import fetch_kline, fetch_realtime
 from signalfin.signals import detect_signals, get_status_text, get_action, check_stop_loss
 from signalfin.notify import send_bark
+from signalfin.review import send_review
 
 CST = timezone(timedelta(hours=8))
 
@@ -199,10 +200,18 @@ def main():
                         choices=["auto", "asia", "us", "test"])
     parser.add_argument("--once", action="store_true",
                         help="Run once and exit (for testing)")
+    parser.add_argument("--review", choices=["asia", "us"],
+                        help="Send daily review for session and exit")
     args = parser.parse_args()
 
     stocks = get_stock_list()
     bark_url = get_bark_url()
+
+    # Review mode: generate and push daily review, then exit
+    if args.review:
+        send_review(args.review, stocks, bark_url)
+        return
+
     print(f"Monitoring {len(stocks)} stocks: {', '.join(stocks)}")
     if not bark_url:
         print("WARNING: BARK_URL not set, will print to stdout")

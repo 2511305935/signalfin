@@ -28,7 +28,11 @@ def send_bark(server_url: str, title: str, content: str,
         headers={"Content-Type": "application/json; charset=utf-8"},
         timeout=10,
     )
-    data = resp.json()
+    try:
+        data = resp.json()
+    except Exception:
+        print(f"Bark error: HTTP {resp.status_code}, body={resp.text[:200]}")
+        return False
     if data.get("code") != 200:
         print(f"Bark error: {data}")
         return False

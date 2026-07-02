@@ -25,8 +25,8 @@ jobs:
       - name: Check trading hours
         id: session_check
         run: |
-          H=$(TZ=Asia/Shanghai date +%H)
-          M=$(TZ=Asia/Shanghai date +%M)
+          H=$(TZ=Asia/Shanghai date +%-H)
+          M=$(TZ=Asia/Shanghai date +%-M)
           T=$((H * 60 + M))
           ASIA_START=$((9 * 60 + 20))
           ASIA_END=$((16 * 60 + 10))

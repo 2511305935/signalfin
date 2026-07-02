@@ -106,7 +106,9 @@ def format_message(results: list[dict]) -> str:
         change = rt["change_pct"]
         arrow = "+" if change >= 0 else ""
         action_icon, action_text = get_action(state)
-        lines.append(f"【{symbol}】{rt['price']} ({arrow}{change}%)")
+        name = rt.get("name", "")
+        label = f"{symbol} {name}" if name else symbol
+        lines.append(f"【{label}】{rt['price']} ({arrow}{change}%)")
         lines.append(get_status_text(state))
         lines.append(f"{action_icon} 操作: {action_text}")
 

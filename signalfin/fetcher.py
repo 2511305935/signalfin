@@ -53,11 +53,13 @@ def _tencent_realtime(symbol: str) -> dict:
     parts = r.text.split("~")
     if len(parts) < 5:
         raise ValueError(f"Tencent: bad realtime response for {symbol}")
+    name = parts[1] if len(parts) > 1 else ""
     price = float(parts[3])
     prev_close = float(parts[4])
     change_pct = (price - prev_close) / prev_close * 100 if prev_close else 0
     return {
         "symbol": symbol,
+        "name": name,
         "price": round(price, 3),
         "prev_close": round(prev_close, 3),
         "change_pct": round(change_pct, 2),
@@ -90,12 +92,21 @@ def _yf_kline(symbol: str, days: int = 120) -> pd.DataFrame:
 
 
 def _yf_realtime(symbol: str) -> dict:
-    hist = _yf_history(symbol, period="5d")
+    ticker = yf.Ticker(symbol)
+    hist = ticker.history(period="5d")
+    if hist.empty:
+        import time
+        time.sleep(2)
+        hist = ticker.history(period="5d")
+    if hist.empty:
+        raise ValueError(f"yfinance: no data for {symbol}")
     price = float(hist["Close"].iloc[-1])
     prev = float(hist["Close"].iloc[-2]) if len(hist) >= 2 else price
     change_pct = (price - prev) / prev * 100 if prev else 0
+    name = ticker.info.get("shortName", "") if hasattr(ticker, "info") else ""
     return {
         "symbol": symbol,
+        "name": name,
         "price": round(price, 3),
         "prev_close": round(prev, 3),
         "change_pct": round(change_pct, 2),

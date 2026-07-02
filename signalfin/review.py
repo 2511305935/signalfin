@@ -129,7 +129,7 @@ def build_review(session: str, stocks: list[str]) -> tuple[str, str] | None:
         sign = "+" if chg >= 0 else ""
         part = f"{icon} {label} {price} ({sign}{chg:.1f}%)"
 
-        if sym in holdings:
+        if sym in holdings and holdings[sym]["cost"] > 0:
             h = holdings[sym]
             pnl = (price - h["cost"]) / h["cost"] * 100
             psign = "+" if pnl >= 0 else ""

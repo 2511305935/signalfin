@@ -2,10 +2,8 @@ name: Stock Monitor
 
 on:
   schedule:
-    # Asia session: 09:23 CST = 01:23 UTC (Mon-Fri)
-    - cron: '23 1 * * 1-5'
-    # US session: 21:23 CST = 13:23 UTC (Mon-Fri)
-    - cron: '23 13 * * 1-5'
+    # Every 5 min, Mon-Fri — workflow self-checks trading hours
+    - cron: '*/5 * * * 1-5'
   workflow_dispatch:
     inputs:
       session:
@@ -13,19 +11,53 @@ on:
         required: false
         default: 'auto'
 
+# Only one monitor instance at a time; skip new triggers if already running
+concurrency:
+  group: stock-monitor
+  cancel-in-progress: false
+
 jobs:
   monitor:
     runs-on: ubuntu-latest
     timeout-minutes: 400
 
     steps:
+      - name: Check trading hours
+        id: session_check
+        run: |
+          H=$(TZ=Asia/Shanghai date +%H)
+          M=$(TZ=Asia/Shanghai date +%M)
+          T=$((H * 60 + M))
+          ASIA_START=$((9 * 60 + 20))
+          ASIA_END=$((16 * 60 + 10))
+          US_START=$((21 * 60 + 20))
+          US_END=$((4 * 60 + 10))
+          IN_SESSION=false
+          if [ $T -ge $ASIA_START ] && [ $T -le $ASIA_END ]; then
+            echo "In Asia session ($H:$M CST)"
+            IN_SESSION=true
+          elif [ $T -ge $US_START ] || [ $T -le $US_END ]; then
+            echo "In US session ($H:$M CST)"
+            IN_SESSION=true
+          else
+            echo "Outside trading hours ($H:$M CST), skipping"
+          fi
+          # workflow_dispatch always runs regardless of time
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            IN_SESSION=true
+          fi
+          echo "run=$IN_SESSION" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v4
+        if: steps.session_check.outputs.run == 'true'
 
       - uses: actions/setup-python@v5
+        if: steps.session_check.outputs.run == 'true'
         with:
           python-version: '3.12'
 
       - name: Cache pip packages
+        if: steps.session_check.outputs.run == 'true'
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
@@ -34,9 +66,11 @@ jobs:
             ${{ runner.os }}-pip-
 
       - name: Install dependencies
+        if: steps.session_check.outputs.run == 'true'
         run: pip install -r requirements.txt
 
       - name: Run monitor
+        if: steps.session_check.outputs.run == 'true'
         env:
           STOCK_LIST: ${{ secrets.STOCK_LIST }}
           BARK_URL: ${{ secrets.BARK_URL }}

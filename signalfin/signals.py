@@ -340,6 +340,26 @@ def get_status_text(state: dict) -> str:
     return f"RSI: {rsi} | MACD: {macd_text}"
 
 
+def check_stop_loss(symbol: str, price: float, stop_price: float,
+                    triggered: set) -> dict | None:
+    """Check if price hit stop-loss. Returns alert dict or None.
+
+    Only fires once per symbol (tracked via triggered set).
+    """
+    if symbol in triggered:
+        return None
+    if price <= stop_price:
+        triggered.add(symbol)
+        pct = (price - stop_price) / stop_price * 100
+        return {
+            "symbol": symbol,
+            "price": price,
+            "stop_price": stop_price,
+            "reason": f"⛔ {symbol} 触发止损！现价{price:.3f} ≤ 止损价{stop_price:.3f} ({pct:+.1f}%)",
+        }
+    return None
+
+
 def _changed(prev: dict | None, curr: dict, key: str) -> bool:
     if prev is None:
         return True

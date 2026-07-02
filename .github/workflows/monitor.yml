@@ -40,6 +40,7 @@ jobs:
         env:
           STOCK_LIST: ${{ secrets.STOCK_LIST }}
           BARK_URL: ${{ secrets.BARK_URL }}
+          STOP_LOSS: ${{ secrets.STOP_LOSS }}
         run: |
           SESSION="${{ github.event.inputs.session || 'auto' }}"
           python monitor.py --session "$SESSION"

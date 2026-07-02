@@ -15,7 +15,7 @@ import time
 from datetime import datetime, timezone, timedelta
 
 from signalfin.fetcher import fetch_kline, fetch_realtime
-from signalfin.signals import detect_signals, get_status_text, get_action
+from signalfin.signals import detect_signals, get_status_text, get_action, check_stop_loss
 from signalfin.notify import send_bark
 
 CST = timezone(timedelta(hours=8))
@@ -48,6 +48,24 @@ def get_stock_list() -> list[str]:
 
 def get_bark_url() -> str | None:
     return os.environ.get("BARK_URL")
+
+
+def get_stop_loss_map() -> dict[str, float]:
+    """Parse STOP_LOSS env var. Format: '0939.HK:7.5,600660.SS:48'"""
+    raw = os.environ.get("STOP_LOSS", "")
+    if not raw:
+        return {}
+    result = {}
+    for pair in raw.split(","):
+        pair = pair.strip()
+        if ":" not in pair:
+            continue
+        symbol, price_str = pair.split(":", 1)
+        try:
+            result[symbol.strip()] = float(price_str.strip())
+        except ValueError:
+            pass
+    return result
 
 
 def detect_session() -> str:
@@ -104,10 +122,18 @@ def format_message(results: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def run_once(stocks: list[str], state_map: dict, bark_url: str | None) -> dict:
+def run_once(stocks: list[str], state_map: dict, bark_url: str | None,
+             stop_loss_map: dict[str, float] | None = None,
+             stop_triggered: set | None = None) -> dict:
     """Run one monitoring cycle. Returns updated state_map."""
     results_with_signals = []
     all_results = []
+    stop_alerts = []
+
+    if stop_loss_map is None:
+        stop_loss_map = {}
+    if stop_triggered is None:
+        stop_triggered = set()
 
     for symbol in stocks:
         try:
@@ -127,10 +153,29 @@ def run_once(stocks: list[str], state_map: dict, bark_url: str | None) -> dict:
             if new_signals:
                 results_with_signals.append(result)
 
+            # Stop-loss check
+            if symbol in stop_loss_map:
+                alert = check_stop_loss(
+                    symbol, rt["price"], stop_loss_map[symbol], stop_triggered)
+                if alert:
+                    stop_alerts.append(alert)
+
         except Exception as e:
             print(f"[{symbol}] Error: {e}")
 
-    # Push only if there are new signals
+    # Stop-loss alerts — send immediately with urgent tone
+    if stop_alerts and bark_url:
+        sl_lines = [a["reason"] for a in stop_alerts]
+        sl_msg = "\n".join(sl_lines)
+        sl_title = f"⛔ 止损触发: {len(stop_alerts)}只标的"
+        ok = send_bark(bark_url, sl_title, sl_msg)
+        status = "sent" if ok else "FAILED"
+        print(f"[STOP-LOSS] {status} — {sl_msg}")
+    elif stop_alerts:
+        for a in stop_alerts:
+            print(f"[STOP-LOSS] {a['reason']}")
+
+    # Regular signal push
     if results_with_signals and bark_url:
         msg = format_message(results_with_signals)
         title = f"signalfin: {len(results_with_signals)}只标的有新信号"
@@ -166,9 +211,14 @@ def main():
     print(f"Session: {session}")
 
     state_map: dict[str, dict] = {}
+    stop_loss_map = get_stop_loss_map()
+    stop_triggered: set[str] = set()
+
+    if stop_loss_map:
+        print(f"Stop-loss: {', '.join(f'{s}≤{p}' for s, p in stop_loss_map.items())}")
 
     if args.once or session == "test":
-        run_once(stocks, state_map, bark_url)
+        run_once(stocks, state_map, bark_url, stop_loss_map, stop_triggered)
         return
 
     # Loop until session ends
@@ -178,7 +228,7 @@ def main():
             print(f"Session {session} ended, exiting")
             break
 
-        run_once(stocks, state_map, bark_url)
+        run_once(stocks, state_map, bark_url, stop_loss_map, stop_triggered)
         time.sleep(INTERVAL)
 
 

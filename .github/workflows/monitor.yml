@@ -19,10 +19,10 @@ on:
         required: false
         default: ''
 
-# Only one monitor instance at a time; skip new triggers if already running
+# New trigger cancels stale run (e.g. US session lingering into Asia open)
 concurrency:
   group: stock-monitor
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   monitor:

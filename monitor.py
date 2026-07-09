@@ -24,13 +24,13 @@ CST = timezone(timedelta(hours=8))
 SESSIONS = {
     "asia": {
         "name": "港股/A股",
-        "start_hour": 9, "start_min": 25,
+        "start_hour": 9, "start_min": 20,
         "end_hour": 16, "end_min": 10,
         "tz": CST,
     },
     "us": {
         "name": "美股",
-        "start_hour": 21, "start_min": 25,
+        "start_hour": 21, "start_min": 20,
         "end_hour": 4, "end_min": 5,  # next day
         "tz": CST,
     },

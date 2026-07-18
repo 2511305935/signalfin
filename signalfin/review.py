@@ -5,6 +5,7 @@ from datetime import datetime, timezone, timedelta
 
 from signalfin.fetcher import fetch_realtime
 from signalfin.notify import send_bark
+from signalfin.zones import load_zones
 
 CST = timezone(timedelta(hours=8))
 
@@ -66,22 +67,29 @@ def parse_actions() -> dict[str, str]:
     return _parse_pipe_kv("ACTIONS", 1)
 
 
-def parse_stop_loss() -> dict[str, float]:
-    """Parse STOP_LOSS env var. Format: 'symbol:price,symbol:price'"""
-    raw = os.environ.get("STOP_LOSS", "")
-    if not raw:
-        return {}
-    result = {}
-    for pair in raw.split(","):
-        pair = pair.strip()
-        if ":" not in pair:
-            continue
-        s, p = pair.split(":", 1)
+def zone_proximity(symbol: str, price: float, zones: dict,
+                   threshold_pct: float = 8.0) -> list[str]:
+    """Distance to configured zone lines, only when within threshold or inside."""
+    stock_cfg = zones.get("stocks", {}).get(symbol)
+    if not stock_cfg:
+        return []
+    items = []
+    for line in stock_cfg.get("lines", []):
         try:
-            result[s.strip()] = float(p.strip())
-        except ValueError:
-            pass
-    return result
+            level = float(line["price"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        when = line.get("when", "below")
+        tag = line.get("tag", "区间")
+        in_zone = price <= level if when == "below" else price >= level
+        op = "≤" if when == "below" else "≥"
+        if in_zone:
+            items.append(f"已在{tag}({op}{level})")
+        else:
+            dist = abs(price - level) / level * 100
+            if dist <= threshold_pct:
+                items.append(f"距{tag}{level}还有{dist:.1f}%")
+    return items
 
 
 def filter_by_session(stocks: list[str], session: str) -> list[str]:
@@ -101,7 +109,7 @@ def build_review(session: str, stocks: list[str]) -> tuple[str, str] | None:
 
     holdings = parse_holdings()
     actions = parse_actions()
-    stop_loss = parse_stop_loss()
+    zones = load_zones()
 
     results = []
     for symbol in session_stocks:
@@ -153,18 +161,16 @@ def build_review(session: str, stocks: list[str]) -> tuple[str, str] | None:
             tag = "大涨" if chg > 0 else "大跌"
             lines.append(f"\u26a1 {label} {tag}{abs(chg):.1f}%")
 
-    # --- Stop-loss proximity (<5%) ---
-    sl_items = []
+    # --- Zone proximity (区间监控) ---
+    zone_items = []
     for r in results:
-        if r["symbol"] in stop_loss:
-            target = stop_loss[r["symbol"]]
-            dist = (r["price"] - target) / target * 100
-            if dist < 5:
-                label = _stock_label(r["symbol"], holdings, r)
-                sl_items.append(f"\u26a0\ufe0f {label} 距止损{target}仅{dist:.1f}%")
-    if sl_items:
-        lines.extend(["", "—— 止损监控 ——"])
-        lines.extend(sl_items)
+        prox = zone_proximity(r["symbol"], r["price"], zones)
+        if prox:
+            label = _stock_label(r["symbol"], holdings, r)
+            zone_items.append(f"\U0001f3af {label} {'；'.join(prox)}")
+    if zone_items:
+        lines.extend(["", "—— 区间监控 ——"])
+        lines.extend(zone_items)
 
     # --- Action guidance ---
     action_items = []

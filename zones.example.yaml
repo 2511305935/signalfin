@@ -1,0 +1,27 @@
+# zones.example.yaml — 区间配置格式示例
+# 真实配置不入库(repo 为 public): 本地放 zones.yaml(已 gitignore),
+# GitHub Actions 用 ZONES secret(内容为完整 YAML,与 zones.yaml 同格式)。
+#
+# 铁律: 每条 line 必须是已尽调的"决策"(买入分批区/减仓线/既定执行线),
+# 不是技术择时。禁止价格止损。出处(source)必填,推送时随消息附带。
+
+stocks:
+  0000.HK:                      # yfinance 代码: 6开头.SS / 0,3开头.SZ / 港股.HK
+    name: 示例股份
+    lines:
+      - price: 10.0             # 触发价
+        when: below             # below=价格≤触发(买入区/执行线); above=价格≥触发(减仓线)
+        tag: 买入区              # 买入区 / 减仓线 / 执行线 / 观察区
+        action: 首批100股(股息率4%锚)   # 推送中显示的既定决策
+        source: 行动方案 7/17            # 决策出处,必填
+
+# A/H 溢价监控: premium = a ÷ (h × fx) − 1
+# 汇率必须实时取(fx 填 yfinance 代码),严禁硬编码
+ah_premium:
+  - name: 示例A/H
+    a: 600000.SS
+    h: 0000.HK
+    fx: HKDCNY=X
+    buy_h_above: 12             # 溢价 > 12% → 推送"买H"
+    switch_a_below: 8           # 溢价 < 8% → 推送"评估切回A"
+    note: 附加说明,随推送显示

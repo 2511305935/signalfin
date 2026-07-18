@@ -119,7 +119,7 @@ jobs:
         env:
           STOCK_LIST: ${{ secrets.STOCK_LIST }}
           BARK_URL: ${{ secrets.BARK_URL }}
-          STOP_LOSS: ${{ secrets.STOP_LOSS }}
+          ZONES: ${{ secrets.ZONES }}
         run: |
           SESSION="${{ github.event.inputs.session || 'auto' }}"
           python monitor.py --session "$SESSION"
@@ -129,7 +129,7 @@ jobs:
         env:
           STOCK_LIST: ${{ secrets.STOCK_LIST }}
           BARK_URL: ${{ secrets.BARK_URL }}
-          STOP_LOSS: ${{ secrets.STOP_LOSS }}
+          ZONES: ${{ secrets.ZONES }}
           HOLDINGS: ${{ secrets.HOLDINGS }}
           ACTIONS: ${{ secrets.ACTIONS }}
         run: |

@@ -236,6 +236,12 @@ def main():
     else:
         print("WARNING: no zones configured (set ZONES secret or zones.yaml)")
 
+    # 区间配置的标的必须被监控,即使不在 STOCK_LIST(如候选买入区)
+    extra = [s for s in zones_cfg["stocks"] if s not in stocks]
+    if extra:
+        stocks = stocks + extra
+        print(f"Added from zones: {', '.join(extra)}")
+
     state_map: dict[str, dict] = {}
 
     if args.once or session == "test":
